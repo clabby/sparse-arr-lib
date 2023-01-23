@@ -10,7 +10,7 @@ pragma solidity ^0.8.17;
 ///   - [ ] Optimize
 /// - [x] Add tests for core `store` / `get` / `deleteAt` logic.
 ///   - [ ] Fix known bugs with edges / deleting the same sparse (i.e. non-canonical) index twice.
-///   - [ ] Gas profiling
+///   - [ ] Gas profiling over a wide range of array sizes / deletions.
 /// - [ ] Add utility functions such as `pop`, `push`, etc.
 library SparseArrLib {
     ////////////////////////////////////////////////////////////////
@@ -203,6 +203,7 @@ library SparseArrLib {
 
     /// @notice Computes the storage slot for the sparse offset of an array at `slot`.
     /// @param slot The storage slot of the array.
+    /// @return _slot The storage slot for the sparse offset of the array.
     function computeSparseSlot(bytes32 slot) internal pure returns (bytes32 _slot) {
         assembly {
             // Store the array's length slot in scratch space @ 0x00
