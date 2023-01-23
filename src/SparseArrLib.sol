@@ -5,14 +5,9 @@ pragma solidity ^0.8.17;
 /// @author clabby <https://github.com/clabby>
 /// @notice A library for handling sparse arrays in storage.
 /// --------------------------------------------------------
-/// @dev This library makes several assumptions:
-/// 1. A zero value in the array is considered to be null. This library was written with
-///    the assumption that the array is of type `bytes32[]`, where the `bytes32` value is
-///    a hash.
-/// --------------------------------------------------------
 /// TODO:
-/// - [ ] Finalize initial logic.
-/// - [ ] Add tests for core `store` / `get` / `deleteIndex` logic.
+/// - [ ] Finalize core logic.
+/// - [ ] Add tests for core `store` / `get` / `deleteAt` logic.
 /// - [ ] Add utility functions such as `pop`, `push`, etc.
 library SparseArrLib {
     ////////////////////////////////////////////////////////////////
@@ -21,52 +16,19 @@ library SparseArrLib {
 
     /// @notice Stores a value within a sparse array
     /// @param slot The storage slot of the array to write to.
-    /// @param index The index within the array to write `contents` to.
+    /// @param index The index within the sparse array to write `contents` to.
     /// @param contents The value to write to the array at `index`.
     function store(bytes32 slot, uint256 index, bytes32 contents) internal {
-        // Compute the value for the given index in the array starting at `slot`
+        // Compute the slot for the given index in the array stored at `slot`
         bytes32 destSlot = computeIndexSlot(slot, index);
+        uint256 offset = getSparseOffset(slot, index);
 
         assembly {
             // Grab the canonical length of the array from storage.
             let length := sload(slot)
 
-            switch gt(index, sub(length, 0x01))
-            case 0x00 {
-                // If the index is not greater than the current length - 1, we are updating
-                // an existing slot and there is no need to update the length of the array.
-                sstore(destSlot, contents)
-            }
-            case 0x01 {
-                // If the index is greater than the current length - 1, we are appending an
-                // element to the array. We need to update the length of the array accordingly.
-
-                // Update the length of the array.
-                sstore(slot, add(length, 0x01))
-
-                // Check if the index is exactly `length`. If it is, we can just store the
-                // contents in the slot. Otherwise, we need to create a pointer to the new
-                // slot.
-                switch eq(index, length)
-                case 0x00 {
-                    // TODO: Store a pointer to `index` in keccak(destSlot).
-                }
-                case 0x01 { sstore(destSlot, contents) }
-            }
-        }
-    }
-
-    /// @notice Removes an element from the array at the given index and creates a pointer
-    ///         to the next element in the array.
-    function deleteIndex(bytes32 slot, uint256 index) internal {
-        bytes32 destSlot = computeIndexSlot(slot, index);
-
-        assembly {
-            let length := sload(slot)
-
-            // Only allow deletions within the bounds of the array.
-            switch lt(index, length)
-            case 0x00 {
+            // Do not allow out of bounds writes.
+            if gt(index, length) {
                 // Store the `Panic(uint256)` selector in scratch space
                 mstore(0x00, 0x4e487b71)
                 // Store the out of bounds panic code in scratch space.
@@ -74,78 +36,123 @@ library SparseArrLib {
                 // Revert with `Panic(32)`
                 revert(0x1c, 0x24)
             }
-            case 0x01 {
-                // Zero out the slot at `index`
-                sstore(destSlot, 0x00)
 
-                // Store `destSlot` in scratch space for hashing.
-                mstore(0x00, destSlot)
+            // If the index is equal to the length, then we are appending to the array.
+            // Otherwise, we are overwriting an existing value, so we don't need to update
+            // the canonical length.
+            if eq(index, length) { sstore(slot, add(length, 0x01)) }
 
-                // Hash the slot for the pointer
-                let pointerSlot := keccak256(0x00, 0x20)
-
-                // Compute the slot of the next element in the array.
-                destSlot := add(destSlot, 0x01)
-
-                sstore(pointerSlot, destSlot)
-
-                // Decrement the length of the array.
-                sstore(slot, sub(length, 0x01))
-            }
+            // Store the contents at the computed slot.
+            sstore(add(destSlot, offset), contents)
         }
     }
 
     /// @notice Retrieves a value from a sparse array at a given index.
-    ///         If there is no value at the given index (signified by a zero value in the slot),
-    ///         then we re-hash the slot at the given index to try to find a pointer to the
-    ///         next slot in the list.
-    ///
-    ///         TODO: This method could be made more efficient, but not without sacrificing security.
-    ///         If we bet on the unlikeliness of a hash containing more than 224 leading zero bits,
-    ///         we could encode the next index in the slot of the original index itself in a uint32,
-    ///         perform a bounds check, and re-hash the index without requiring a third `sload`.
+    /// TODO: Long description
     /// @param slot The storage slot of the array to read from.
     /// @param index The index within the array to read from.
     /// @return _value The value at the given index in the array.
     function get(bytes32 slot, uint256 index) internal view returns (bytes32 _value) {
-        bytes32 targetSlot = computeIndexSlot(slot, index);
         assembly {
-            // Fetch the value at the index `index` within the array.
-            _value := sload(targetSlot)
-
-            // If the value is zero, attempt to find a pointer to the next slot in the list.
-            // Otherwise, we already have the value we're looking for.
-            if iszero(_value) {
-                // Store the initial slot in scratch space for hashing.
-                mstore(0x00, targetSlot)
-
-                // Hash the initial slot to attempt to get the next slot in the list.
-                // Store it in `_value` for now (TODO: Is this more efficient than a new stack var?)
-                _value := keccak256(0x00, 0x20)
-
-                // Load the pointer to the next slot in the list.
-                // Store it in `_value` for now (TODO: Is this more efficient than a new stack var?)
-                _value := sload(_value)
-
-                // If the pointer at the re-hashed slot is zero, we are out of bounds.
-                if iszero(_value) {
-                    // Store the `Panic(uint256)` selector in scratch space
-                    mstore(0x00, 0x4e487b71)
-                    // Store the out of bounds panic code in scratch space.
-                    mstore(0x20, 0x20)
-                    // Revert with `Panic(32)`
-                    revert(0x1c, 0x24)
-                }
-
-                // Load the value at the next slot in the list.
-                _value := sload(_value)
+            // If the requested index is greater than or equal to the length of the array, revert.
+            if iszero(lt(index, sload(slot))) {
+                // Store the `Panic(uint256)` selector in scratch space
+                mstore(0x00, 0x4e487b71)
+                // Store the out of bounds panic code in scratch space.
+                mstore(0x20, 0x20)
+                // Revert with `Panic(32)`
+                revert(0x1c, 0x24)
             }
+        }
+
+        bytes32 rawTargetSlot = computeIndexSlot(slot, index);
+        uint256 offset = getSparseOffset(slot, index);
+
+        assembly {
+            // Fetch the value at `index` within the sparse array.
+            _value := sload(add(rawTargetSlot, offset))
+        }
+    }
+
+    /// @notice Removes an element from the array at the given index and adds a new
+    ///         sparse offset to the deleted elements subarray.
+    function deleteAt(bytes32 slot, uint256 index) internal {
+        bytes32 sparseSlot = computeSparseSlot(slot);
+
+        assembly {
+            // Decrement the length of the target array by 1.
+            sstore(slot, sub(sload(slot), 0x01))
+
+            // Store the index of the deleted element in the deleted elements subarray.
+            let totalOffset := sload(sparseSlot)
+            let newTotalOffset := add(totalOffset, 1)
+            sstore(sparseSlot, newTotalOffset)
+
+            // Store the sparse slot in memory for hashing.
+            mstore(0x00, sparseSlot)
+
+            // Store the canonical index of the deleted element as well as the sparse
+            // offset of elements proceeding it.
+            sstore(add(totalOffset, keccak256(0x00, 0x20)), or(shl(0x80, index), newTotalOffset))
         }
     }
 
     ////////////////////////////////////////////////////////////////
     //                          Helpers                           //
     ////////////////////////////////////////////////////////////////
+
+    /// @notice Performs a binary search on all the deleted elements in the array to find
+    /// the sparse offset of the given index.
+    /// @dev BIT LAYOUT OF DELETED CONTENTS ARRAY ELEMENTS:
+    /// - 128 bits: The canonical index of the deleted element.
+    /// - 128 bits: The sparse offset starting at the canonical index of the deleted element.
+    /// @param slot The storage slot of the array to read from.
+    /// @param index The index within the array to read from.
+    /// @return _offset The sparse offset of the given index.
+    function getSparseOffset(bytes32 slot, uint256 index) internal view returns (uint256 _offset) {
+        // Compute the storage slot for the array of deleted elements.
+        bytes32 sparseSlot = computeSparseSlot(slot);
+
+        assembly {
+            // Search for sparse offset of the given index by performing a binary
+            // search on the deleted elements in the array.
+            let low := 0x00
+            let high := sload(sparseSlot)
+
+            // If low and high are not equal, elements within the sparse array have been
+            // deleted. We need to perform a binary search to find the sparse offset at
+            // the given index.
+            if xor(low, high) {
+                // Store the sparse slot in scratch space for hashing
+                mstore(0x00, sparseSlot)
+                // Get the slot of the first element within the deleted elements array.
+                sparseSlot := keccak256(0x00, 0x20)
+
+                // Calculate the midpoint of the deleted elements array.
+                let mid := div(add(low, high), 0x02)
+                // The value of the element at the midpoint of the deleted elements array.
+                let midVal := sload(add(sparseSlot, mid))
+                // Shift in the canonical index of the deleted element at the midpoint
+                let midIndex := shr(0x80, midVal)
+
+                for { } lt(low, high) {
+                    // Calculate the midpoint of [low, high]
+                    mid := div(add(low, high), 0x02)
+                    // placeholder
+                    midVal := sload(add(sparseSlot, mid))
+                    // Load the canonical index of the deleted element at the above midpoint
+                    midIndex := shr(0x80, sload(midVal))
+                } {
+                    switch gt(index, midIndex)
+                    case 0x00 { high := mid }
+                    case 0x01 { low := mid }
+                }
+
+                // Clear the canonical index from the first 128 bits of `midVal` to get the offset.
+                _offset := shr(0x80, shl(0x80, midVal))
+            }
+        }
+    }
 
     /// @notice Computes the canonical storage slot for an `index` within an array at `slot`.
     /// @dev Will not revert if the index is out of bounds of the current array size.
