@@ -8,8 +8,8 @@ pragma solidity ^0.8.17;
 /// TODO:
 /// - [ ] Finalize core logic.
 ///   - [ ] Optimize
-/// - [ ] Add tests for core `store` / `get` / `deleteAt` logic.
-///   - [ ] Fix known bugs with edges.
+/// - [x] Add tests for core `store` / `get` / `deleteAt` logic.
+///   - [ ] Fix known bugs with edges / deleting the same sparse (i.e. non-canonical) index twice.
 ///   - [ ] Gas profiling
 /// - [ ] Add utility functions such as `pop`, `push`, etc.
 library SparseArrLib {
@@ -87,12 +87,11 @@ library SparseArrLib {
     function deleteAt(bytes32 slot, uint256 index) internal {
         // Compute the storage slot of the deleted elements subarray.
         bytes32 sparseSlot = computeSparseSlot(slot);
-        // Get the sparse offset for the given index.
-        uint256 sparseOffset = getSparseOffset(slot, index);
 
         // TODO: Do not allow out of bounds deletions.
         // TODO: Handle deletions at the same index twice.
-        // TODO: Handle edge deletions.
+        // TODO: Do not require linear progression of deletions (? - this would kinda suck to do)
+        // TODO: Ensure edge deletions are handled correctly.
         assembly {
             // Decrement the canonical length of the target array by 1.
             sstore(slot, sub(sload(slot), 0x01))
@@ -111,7 +110,7 @@ library SparseArrLib {
             // Store the canonical index of the deleted element as well as the sparse
             // offset of elements proceeding it.
             // Canonical index = index + sparseOffset
-            sstore(add(totalOffset, keccak256(0x00, 0x20)), or(shl(0x80, add(index, sparseOffset)), newTotalOffset))
+            sstore(add(totalOffset, keccak256(0x00, 0x20)), or(shl(0x80, add(index, newTotalOffset)), newTotalOffset))
         }
     }
 
@@ -150,48 +149,40 @@ library SparseArrLib {
                 // the length of the deleted elements subarray.
                 high := sub(high, 0x01)
 
-                // Calculate the midpoint of the deleted elements array.
+                // Calculate the midpoint of [low, high] with a floor div
                 let mid := shr(0x01, add(low, high))
                 // Get the value of the midpoint in the deleted elements subarray.
                 let midVal := sload(add(sparseSlot, mid))
-                // Shift in the canonical index of the deleted element at the midpoint
+                // Shift out the canonical index of the deleted element at the above midpoint
                 let midIndex := shr(0x80, midVal)
+                // Shift out the sparse offset of the deleted element at the above midpoint
+                _offset := shr(0x80, shl(0x80, midVal))
 
                 // TODO: Optimize inner loop
-                // TODO: Fix bug where the search does not find the correct offset
-                // among many deletions. We need a notion of canonical vs. sparse indexes here.
                 for { } iszero(gt(low, high)) {
                     // Calculate the midpoint of [low, high] with a floor div
                     mid := shr(0x01, add(low, high))
                     // Get the value of the midpoint in the deleted elements subarray.
                     midVal := sload(add(sparseSlot, mid))
-                    // Load the canonical index of the deleted element at the above midpoint
-                    midIndex := shr(0x80, sload(midVal))
+                    // Shift out the canonical index of the deleted element at the above midpoint
+                    midIndex := shr(0x80, midVal)
+                    // Shift out the sparse offset of the deleted element at the above midpoint
+                    _offset := shr(0x80, shl(0x80, midVal))
                 } {
-                    if lt(index, midIndex) {
+                    let canonicalIndex := add(index, _offset)
+                    if lt(canonicalIndex, midIndex) {
                         high := sub(mid, 0x01)
                         continue
                     }
 
-                    if gt(index, midIndex) {
+                    if gt(canonicalIndex, midIndex) {
                         low := add(mid, 0x01)
                         continue
                     }
 
+                    // If the indexes are equal, we're done!
                     break
                 }
-
-                // If the requested index is less than the canonical index of the fetched
-                // deleted element, then the sparse offset is 0.
-                // TODO: This can be cleaned up- we likely don't need to wait until after
-                // the search to determine this. Can just check if the index is less than
-                // the first deleted index.
-                switch lt(index, midIndex)
-                case 0x00 {
-                    // Clear the canonical index from the first 128 bits of `midVal` to get the offset.
-                    _offset := shr(0x80, shl(0x80, midVal))
-                }
-                case 0x01 { _offset := 0x00 }
             }
         }
     }
