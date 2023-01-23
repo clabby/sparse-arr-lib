@@ -20,7 +20,7 @@ library SparseArrLib {
     /// @param contents The value to write to the array at `index`.
     function store(bytes32 slot, uint256 index, bytes32 contents) internal {
         // Compute the slot for the given index in the array stored at `slot`
-        bytes32 destSlot = computeIndexSlot(slot, index);
+        bytes32 rawTargetSlot = computeIndexSlot(slot, index);
         uint256 offset = getSparseOffset(slot, index);
 
         assembly {
@@ -43,12 +43,12 @@ library SparseArrLib {
             if eq(index, length) { sstore(slot, add(length, 0x01)) }
 
             // Store the contents at the computed slot.
-            sstore(add(destSlot, offset), contents)
+            sstore(add(rawTargetSlot, offset), contents)
         }
     }
 
     /// @notice Retrieves a value from a sparse array at a given index.
-    /// TODO: Long description
+    /// TODO: Explain what's going on here.
     /// @param slot The storage slot of the array to read from.
     /// @param index The index within the array to read from.
     /// @return _value The value at the given index in the array.
@@ -76,15 +76,22 @@ library SparseArrLib {
 
     /// @notice Removes an element from the array at the given index and adds a new
     ///         sparse offset to the deleted elements subarray.
+    /// @param slot The storage slot of the array to delete the element from.
+    /// @param index The index of the element to delete.
     function deleteAt(bytes32 slot, uint256 index) internal {
+        // Compute the storage slot of the deleted elements subarray.
         bytes32 sparseSlot = computeSparseSlot(slot);
 
+        // TODO: Do not allow out of bounds deletions.
         assembly {
-            // Decrement the length of the target array by 1.
+            // Decrement the canonical length of the target array by 1.
             sstore(slot, sub(sload(slot), 0x01))
 
-            // Store the index of the deleted element in the deleted elements subarray.
+            // Fetch the total offset from the deleted elements subarray
+            // (the total offset is just the length)
             let totalOffset := sload(sparseSlot)
+
+            // Increment the total offset of the deleted elements subarray by 1.
             let newTotalOffset := add(totalOffset, 1)
             sstore(sparseSlot, newTotalOffset)
 
@@ -93,7 +100,11 @@ library SparseArrLib {
 
             // Store the canonical index of the deleted element as well as the sparse
             // offset of elements proceeding it.
-            sstore(add(totalOffset, keccak256(0x00, 0x20)), or(shl(0x80, index), newTotalOffset))
+            // TODO: We need a notion of canonical vs. sparse indexes here.
+            sstore(
+                add(totalOffset, keccak256(0x00, 0x20)),
+                or(shl(0x80, index /* add(index, totalOffset) */ ), newTotalOffset)
+            )
         }
     }
 
@@ -128,28 +139,55 @@ library SparseArrLib {
                 // Get the slot of the first element within the deleted elements array.
                 sparseSlot := keccak256(0x00, 0x20)
 
+                // Generalize the index- it contains a sparse offset in this branch.
+                // index := sub(index, high)
+
+                // Subtract one from the high bound to set it to the final *index* rather than
+                // the length of the deleted elements subarray.
+                high := sub(high, 0x01)
+
                 // Calculate the midpoint of the deleted elements array.
-                let mid := div(add(low, high), 0x02)
-                // The value of the element at the midpoint of the deleted elements array.
+                let mid := shr(0x01, add(low, high))
+                // Get the value of the midpoint in the deleted elements subarray.
                 let midVal := sload(add(sparseSlot, mid))
                 // Shift in the canonical index of the deleted element at the midpoint
                 let midIndex := shr(0x80, midVal)
 
-                for { } lt(low, high) {
-                    // Calculate the midpoint of [low, high]
-                    mid := div(add(low, high), 0x02)
-                    // placeholder
+                // TODO: Optimize inner loop
+                // TODO: Fix bug where the search does not find the correct offset
+                // among many deletions. We need a notion of canonical vs. sparse indexes here.
+                for { } iszero(gt(low, high)) {
+                    // Calculate the midpoint of [low, high] with a floor div
+                    mid := shr(0x01, add(low, high))
+                    // Get the value of the midpoint in the deleted elements subarray.
                     midVal := sload(add(sparseSlot, mid))
                     // Load the canonical index of the deleted element at the above midpoint
                     midIndex := shr(0x80, sload(midVal))
                 } {
-                    switch gt(index, midIndex)
-                    case 0x00 { high := mid }
-                    case 0x01 { low := mid }
+                    if lt(index, midIndex) {
+                        high := sub(mid, 0x01)
+                        continue
+                    }
+
+                    if gt(index, midIndex) {
+                        low := add(mid, 0x01)
+                        continue
+                    }
+
+                    break
                 }
 
-                // Clear the canonical index from the first 128 bits of `midVal` to get the offset.
-                _offset := shr(0x80, shl(0x80, midVal))
+                // If the requested index is less than the canonical index of the fetched
+                // deleted element, then the sparse offset is 0.
+                // TODO: This can be cleaned up- we likely don't need to wait until after
+                // the search to determine this. Can just check if the index is less than
+                // the first deleted index
+                switch lt(index, midIndex)
+                case 0x00 {
+                    // Clear the canonical index from the first 128 bits of `midVal` to get the offset.
+                    _offset := shr(0x80, shl(0x80, midVal))
+                }
+                case 0x01 { _offset := 0x00 }
             }
         }
     }

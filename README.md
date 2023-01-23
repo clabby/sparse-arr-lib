@@ -1,7 +1,11 @@
 # `sparse-arr-lib` [![License](https://img.shields.io/badge/License-Beerware-green)](./LICENSE.md)
 
 > **Warning**
-> This library is unaudited.
+> This library is a WIP & is unaudited. Use discretion, don't test in prod.
 
 
-A library to assist with using sparse arrays in Solidity.
+A library to assist with utilizing sparse arrays in Solidity.
+
+## Intended Behavior
+
+![Sparse Demo](./assets/sparse_arr.png)

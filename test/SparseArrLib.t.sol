@@ -35,6 +35,12 @@ contract SparseArrLibTest is Test {
         assertEq(SparseArrLib.get(slot, 0), BABE);
     }
 
+    /// TODO
+    function test_store_appendAfterDeletion_succeeds() public { }
+
+    /// TODO
+    function test_store_overwriteAfterDeletion_succeeds() public { }
+
     /// @notice Tests that attempting to write to an out of bounds index causes `store` to revert
     /// with the expected data.
     function test_store_outOfBounds_reverts() public {
@@ -69,6 +75,8 @@ contract SparseArrLibTest is Test {
         assertEq(SparseArrLib.get(slot, 2), BABE);
         SparseArrLib.store(slot, 3, BEEF);
         assertEq(SparseArrLib.get(slot, 3), BEEF);
+        SparseArrLib.store(slot, 4, BABE);
+        assertEq(SparseArrLib.get(slot, 4), BABE);
 
         // Delete element at index 1
         SparseArrLib.deleteAt(slot, 1);
@@ -78,12 +86,16 @@ contract SparseArrLibTest is Test {
         assertEq(SparseArrLib.get(slot, 1), BABE);
         // Assert that index 2 now contains the value that used to be at index 3
         assertEq(SparseArrLib.get(slot, 2), BEEF);
+        // Assert that index 3 now contains the value that used to be at index 4
+        assertEq(SparseArrLib.get(slot, 3), BABE);
     }
 
     /// @notice Tests that after deleting multiple values from a sparse array, the indexes of the
     /// values are shifted appropriately.
-    function test_deleteAt_singleDelete_works() public {
+    function test_deleteAt_multiDelete_works() public {
         bytes32 slot = _getArrSlot();
+
+        // Insert 5 elements into the sparse array
         SparseArrLib.store(slot, 0, BEEF);
         assertEq(SparseArrLib.get(slot, 0), BEEF);
         SparseArrLib.store(slot, 1, BEEF);
@@ -92,15 +104,52 @@ contract SparseArrLibTest is Test {
         assertEq(SparseArrLib.get(slot, 2), BABE);
         SparseArrLib.store(slot, 3, BEEF);
         assertEq(SparseArrLib.get(slot, 3), BEEF);
+        SparseArrLib.store(slot, 4, BABE);
+        assertEq(SparseArrLib.get(slot, 4), BABE);
 
-        // Delete element at index 1
+        // Assert that the length was properly updated
+        assertEq(arr.length, 5);
+
+        // Delete elements at index 1 & 3
         SparseArrLib.deleteAt(slot, 1);
+        SparseArrLib.deleteAt(slot, 3);
+
         // Assert that index 0 retained its original value.
         assertEq(SparseArrLib.get(slot, 0), BEEF);
         // Assert that index 1 now contains the value that used to be at index 2
         assertEq(SparseArrLib.get(slot, 1), BABE);
-        // Assert that index 2 now contains the value that used to be at index 3
-        assertEq(SparseArrLib.get(slot, 2), BEEF);
+        // Assert that index 2 now contains the value that used to be at index 4
+        assertEq(SparseArrLib.get(slot, 2), BABE);
+
+        // Assert that the length was properly updated
+        assertEq(arr.length, 3);
+    }
+
+    /// @notice Tests that after deleting multiple values from a sparse array, the indexes of the
+    /// values are shifted appropriately.
+    function test_deleteAt_manyDeletions_works() public {
+        bytes32 slot = _getArrSlot();
+
+        // Insert 10 elements into the sparse array
+        for (uint256 i; i < 10; i++) {
+            bytes32 ins = i % 2 == 0 ? BEEF : BABE;
+            SparseArrLib.store(slot, i, ins);
+            assertEq(SparseArrLib.get(slot, i), ins);
+        }
+
+        // Delete element at index 1
+        SparseArrLib.deleteAt(slot, 1);
+        SparseArrLib.deleteAt(slot, 3);
+        // Delete the element at index 7
+
+        // Assert that index 0 retained its original value.
+        assertEq(SparseArrLib.get(slot, 0), BEEF);
+        // Assert that index 1 now contains the value that used to be at index 2
+        assertEq(SparseArrLib.get(slot, 1), BEEF);
+        // // Assert that index 2 now contains the value that used to be at index 3
+        assertEq(SparseArrLib.get(slot, 2), BABE);
+        // // // Assert that index 3 now contains the value that used to be at index 4
+        // assertEq(SparseArrLib.get(slot, 3), BEEF);
     }
 
     ////////////////////////////////////////////////////////////////
