@@ -80,6 +80,7 @@ contract SparseArrLibTest is Test {
 
         // Delete element at index 1
         SparseArrLib.deleteAt(slot, 1);
+
         // Assert that index 0 retained its original value.
         assertEq(SparseArrLib.get(slot, 0), BEEF);
         // Assert that index 1 now contains the value that used to be at index 2
@@ -90,9 +91,9 @@ contract SparseArrLibTest is Test {
         assertEq(SparseArrLib.get(slot, 3), BABE);
     }
 
-    /// @notice Tests that after deleting multiple values from a sparse array, the indexes of the
+    /// @notice Tests that after deleting two values from a sparse array, the indexes of the
     /// values are shifted appropriately.
-    function test_deleteAt_multiDelete_works() public {
+    function test_deleteAt_doubleDelete_works() public {
         bytes32 slot = _getArrSlot();
 
         // Insert 5 elements into the sparse array
@@ -110,9 +111,9 @@ contract SparseArrLibTest is Test {
         // Assert that the length was properly updated
         assertEq(arr.length, 5);
 
-        // Delete elements at index 1 & 3
-        SparseArrLib.deleteAt(slot, 1);
-        SparseArrLib.deleteAt(slot, 3);
+        // Delete elements at canonical index 1 & 3 (adj: 1 & 2)
+        SparseArrLib.deleteAt(slot, 1); // new:  [BEEF, BABE, BEEF, BABE]
+        SparseArrLib.deleteAt(slot, 2); // new:  [BEEF, BABE, BABE]
 
         // Assert that index 0 retained its original value.
         assertEq(SparseArrLib.get(slot, 0), BEEF);
@@ -131,25 +132,28 @@ contract SparseArrLibTest is Test {
         bytes32 slot = _getArrSlot();
 
         // Insert 10 elements into the sparse array
-        for (uint256 i; i < 10; i++) {
+        for (uint256 i; i < 10; ++i) {
             bytes32 ins = i % 2 == 0 ? BEEF : BABE;
             SparseArrLib.store(slot, i, ins);
             assertEq(SparseArrLib.get(slot, i), ins);
         }
 
-        // Delete element at index 1
-        SparseArrLib.deleteAt(slot, 1);
-        SparseArrLib.deleteAt(slot, 3);
-        // Delete the element at index 7
+        // Assert that the length was properly updated
+        assertEq(arr.length, 10);
 
-        // Assert that index 0 retained its original value.
+        // Delete elements at index 1, 3, & 5
+        SparseArrLib.deleteAt(slot, 1); // new: [BEEF, BEEF, BABE, BEEF, BABE, BEEF, BABE, BEEF, BABE]
+        SparseArrLib.deleteAt(slot, 3); // new: [BEEF, BEEF, BABE, BABE, BEEF, BABE, BEEF, BABE]
+        SparseArrLib.deleteAt(slot, 5); // new: [BEEF, BEEF, BABE, BABE, BEEF, BEEF, BABE]
+
+        // TODO: Fix
         assertEq(SparseArrLib.get(slot, 0), BEEF);
-        // Assert that index 1 now contains the value that used to be at index 2
         assertEq(SparseArrLib.get(slot, 1), BEEF);
-        // // Assert that index 2 now contains the value that used to be at index 3
         assertEq(SparseArrLib.get(slot, 2), BABE);
-        // // // Assert that index 3 now contains the value that used to be at index 4
-        // assertEq(SparseArrLib.get(slot, 3), BEEF);
+        assertEq(SparseArrLib.get(slot, 3), BABE);
+        assertEq(SparseArrLib.get(slot, 4), BEEF);
+        assertEq(SparseArrLib.get(slot, 5), BEEF);
+        assertEq(SparseArrLib.get(slot, 6), BABE);
     }
 
     ////////////////////////////////////////////////////////////////

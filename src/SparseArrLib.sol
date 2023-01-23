@@ -3,11 +3,14 @@ pragma solidity ^0.8.17;
 
 /// @title SparseArrLib
 /// @author clabby <https://github.com/clabby>
-/// @notice A library for handling sparse arrays in storage.
+/// @notice A library for handling sparse storage arrays.
 /// --------------------------------------------------------
 /// TODO:
 /// - [ ] Finalize core logic.
+///   - [ ] Optimize
 /// - [ ] Add tests for core `store` / `get` / `deleteAt` logic.
+///   - [ ] Fix known bugs with edges.
+///   - [ ] Gas profiling
 /// - [ ] Add utility functions such as `pop`, `push`, etc.
 library SparseArrLib {
     ////////////////////////////////////////////////////////////////
@@ -21,6 +24,7 @@ library SparseArrLib {
     function store(bytes32 slot, uint256 index, bytes32 contents) internal {
         // Compute the slot for the given index in the array stored at `slot`
         bytes32 rawTargetSlot = computeIndexSlot(slot, index);
+        // Get the sparse offset at the given index
         uint256 offset = getSparseOffset(slot, index);
 
         assembly {
@@ -65,7 +69,9 @@ library SparseArrLib {
             }
         }
 
+        // Compute the slot for the given index in the array stored at `slot`
         bytes32 rawTargetSlot = computeIndexSlot(slot, index);
+        // Get the sparse offset at the given index
         uint256 offset = getSparseOffset(slot, index);
 
         assembly {
@@ -81,8 +87,12 @@ library SparseArrLib {
     function deleteAt(bytes32 slot, uint256 index) internal {
         // Compute the storage slot of the deleted elements subarray.
         bytes32 sparseSlot = computeSparseSlot(slot);
+        // Get the sparse offset for the given index.
+        uint256 sparseOffset = getSparseOffset(slot, index);
 
         // TODO: Do not allow out of bounds deletions.
+        // TODO: Handle deletions at the same index twice.
+        // TODO: Handle edge deletions.
         assembly {
             // Decrement the canonical length of the target array by 1.
             sstore(slot, sub(sload(slot), 0x01))
@@ -92,7 +102,7 @@ library SparseArrLib {
             let totalOffset := sload(sparseSlot)
 
             // Increment the total offset of the deleted elements subarray by 1.
-            let newTotalOffset := add(totalOffset, 1)
+            let newTotalOffset := add(totalOffset, 0x01)
             sstore(sparseSlot, newTotalOffset)
 
             // Store the sparse slot in memory for hashing.
@@ -100,11 +110,8 @@ library SparseArrLib {
 
             // Store the canonical index of the deleted element as well as the sparse
             // offset of elements proceeding it.
-            // TODO: We need a notion of canonical vs. sparse indexes here.
-            sstore(
-                add(totalOffset, keccak256(0x00, 0x20)),
-                or(shl(0x80, index /* add(index, totalOffset) */ ), newTotalOffset)
-            )
+            // Canonical index = index + sparseOffset
+            sstore(add(totalOffset, keccak256(0x00, 0x20)), or(shl(0x80, add(index, sparseOffset)), newTotalOffset))
         }
     }
 
@@ -115,8 +122,8 @@ library SparseArrLib {
     /// @notice Performs a binary search on all the deleted elements in the array to find
     /// the sparse offset of the given index.
     /// @dev BIT LAYOUT OF DELETED CONTENTS ARRAY ELEMENTS:
-    /// - 128 bits: The canonical index of the deleted element.
-    /// - 128 bits: The sparse offset starting at the canonical index of the deleted element.
+    /// - 128 high-order bits: The canonical index of the deleted element.
+    /// - 128 low-order bits:  The sparse offset starting at the canonical index of the deleted element.
     /// @param slot The storage slot of the array to read from.
     /// @param index The index within the array to read from.
     /// @return _offset The sparse offset of the given index.
@@ -138,9 +145,6 @@ library SparseArrLib {
                 mstore(0x00, sparseSlot)
                 // Get the slot of the first element within the deleted elements array.
                 sparseSlot := keccak256(0x00, 0x20)
-
-                // Generalize the index- it contains a sparse offset in this branch.
-                // index := sub(index, high)
 
                 // Subtract one from the high bound to set it to the final *index* rather than
                 // the length of the deleted elements subarray.
@@ -181,7 +185,7 @@ library SparseArrLib {
                 // deleted element, then the sparse offset is 0.
                 // TODO: This can be cleaned up- we likely don't need to wait until after
                 // the search to determine this. Can just check if the index is less than
-                // the first deleted index
+                // the first deleted index.
                 switch lt(index, midIndex)
                 case 0x00 {
                     // Clear the canonical index from the first 128 bits of `midVal` to get the offset.

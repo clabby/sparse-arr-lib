@@ -6,6 +6,10 @@
 
 A library to assist with utilizing sparse arrays in Solidity.
 
-## Intended Behavior
+*TODO: Extended desc*
 
+## Intended Behavior
 ![Sparse Demo](./assets/sparse_arr.png)
+
+## Usage
+*TODO*
