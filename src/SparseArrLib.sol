@@ -88,17 +88,28 @@ library SparseArrLib {
         // Compute the storage slot of the deleted elements subarray.
         bytes32 sparseSlot = computeSparseSlot(slot);
 
-        // TODO: Do not allow out of bounds deletions.
         // TODO: Handle deletions at the same index twice.
         // TODO: Do not require linear progression of deletions (? - this would kinda suck to do)
         // TODO: Ensure edge deletions are handled correctly.
+
         assembly {
-            // Decrement the canonical length of the target array by 1.
-            sstore(slot, sub(sload(slot), 0x01))
+            // If the requested index is greater than the array length, revert.
+            // Out of bounds deletions are not allowed
+            if iszero(lt(index, sload(slot))) {
+                // Store the `Panic(uint256)` selector in scratch space
+                mstore(0x00, 0x4e487b71)
+                // Store the out of bounds panic code in scratch space.
+                mstore(0x20, 0x20)
+                // Revert with `Panic(32)`
+                revert(0x1c, 0x24)
+            }            
 
             // Fetch the total offset from the deleted elements subarray
             // (the total offset is just the length)
             let totalOffset := sload(sparseSlot)
+
+            // Decrement the canonical length of the target array by 1.
+            sstore(slot, sub(sload(slot), 0x01))
 
             // Increment the total offset of the deleted elements subarray by 1.
             let newTotalOffset := add(totalOffset, 0x01)
@@ -111,6 +122,25 @@ library SparseArrLib {
             // offset of elements proceeding it.
             // Canonical index = index + sparseOffset
             sstore(add(totalOffset, keccak256(0x00, 0x20)), or(shl(0x80, add(index, newTotalOffset)), newTotalOffset))
+        }
+    }
+
+
+
+    /// @notice Pop, removes the last item of the sparse array if array length is greater than 0
+    /// @param slot The storage slot of the array to delete the element from.
+    function pop(bytes32 slot) internal {
+        assembly {
+            let length := sload(slot)
+            if iszero(length) {
+                // Store the `Panic(uint256)` selector in scratch space
+                mstore(0x00, 0x4e487b71)
+                // Store the out of bounds panic code in scratch space.
+                mstore(0x20, 0x20)
+                // Revert with `Panic(32)`
+                revert(0x1c, 0x24)
+            }
+            sstore(slot, sub(length, 0x01))
         }
     }
 
