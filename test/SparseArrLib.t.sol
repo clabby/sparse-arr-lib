@@ -222,6 +222,63 @@ contract SparseArrLibTest is Test {
         assertEq(arr.length, 6);
     }
 
+    /// @notice Tests that attempting to delete an out of bounds index causes `deleteAt` to revert
+    function test_deleteAt_out_of_bounds_reverts() public {
+        bytes32 slot = _getArrSlot();
+
+        // Store 5 elements in the sparse array
+        SparseArrLib.store(slot, 0, b(1));
+        assertEq(SparseArrLib.get(slot, 0), b(1));
+        SparseArrLib.store(slot, 1, b(2));
+        assertEq(SparseArrLib.get(slot, 1), b(2));
+        SparseArrLib.store(slot, 2, b(3));
+        assertEq(SparseArrLib.get(slot, 2), b(3));
+        SparseArrLib.store(slot, 3, b(4));
+        assertEq(SparseArrLib.get(slot, 3), b(4));
+        SparseArrLib.store(slot, 4, b(5));
+        assertEq(SparseArrLib.get(slot, 4), b(5));
+
+        // Assert that the length is correct.
+        assertEq(arr.length, 5);
+
+        vm.expectRevert(abi.encodeWithSelector(PANIC_SELECTOR, 0x20));
+        // Delete element at index 5 (Out of Bounds), revert
+        SparseArrLib.deleteAt(slot, 5);
+    }
+
+    function test_pop() public {
+        bytes32 slot = _getArrSlot();
+
+        SparseArrLib.store(slot, 0, b(1));
+        assertEq(SparseArrLib.get(slot, 0), b(1));
+        SparseArrLib.store(slot, 1, b(2));
+        assertEq(SparseArrLib.get(slot, 1), b(2));
+        SparseArrLib.store(slot, 2, b(3));
+        assertEq(SparseArrLib.get(slot, 2), b(3));
+        SparseArrLib.store(slot, 3, b(4));
+        assertEq(SparseArrLib.get(slot, 3), b(4));
+        SparseArrLib.store(slot, 4, b(5));
+        assertEq(SparseArrLib.get(slot, 4), b(5));
+
+        // Assert that the length is correct.
+        assertEq(arr.length, 5);
+        
+        // pop
+        SparseArrLib.pop(slot);
+
+        // Assert that the length is correct.
+        assertEq(arr.length, 4);
+        // Assert that the values at each index are correct
+        assertEq(SparseArrLib.get(slot, 0), b(1));
+        assertEq(SparseArrLib.get(slot, 1), b(2));
+        assertEq(SparseArrLib.get(slot, 2), b(3));
+        assertEq(SparseArrLib.get(slot, 3), b(4));
+
+        // Assert that get() on the index that was previously popped now reverts
+        vm.expectRevert(abi.encodeWithSelector(PANIC_SELECTOR, 0x20));
+        SparseArrLib.get(slot, 4);
+    }
+
     ////////////////////////////////////////////////////////////////
     //                          Helpers                           //
     ////////////////////////////////////////////////////////////////
