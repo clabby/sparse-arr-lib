@@ -9,10 +9,7 @@ contract SparseArrLibTest is Test {
     bytes4 internal constant PANIC_SELECTOR = 0x4e487b71;
 
     /// @notice Test array.
-    uint256[] public arr; // slot 0 (length)
-    // arr[0] = keccak256(0) + 0
-    // arr[1] = keccak256(0) + 1
-    address a; // slot 1
+    uint256[] public arr;
 
     ////////////////////////////////////////////////////////////////
     //                       `store` tests                        //

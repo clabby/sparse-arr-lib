@@ -93,7 +93,7 @@ library SparseArrLib {
         // TODO: Ensure edge deletions are handled correctly.
 
         assembly {
-            // If the requested index is greater than the array length, revert.
+            // If the requested index is greater than or equal to the array length, revert.
             // Out of bounds deletions are not allowed
             if iszero(lt(index, sload(slot))) {
                 // Store the `Panic(uint256)` selector in scratch space
