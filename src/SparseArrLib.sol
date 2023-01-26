@@ -10,8 +10,13 @@ pragma solidity ^0.8.17;
 ///   - [ ] Optimize
 /// - [x] Add tests for core `store` / `get` / `deleteAt` logic.
 ///   - [ ] Fix known bugs with edges / deleting the same sparse (i.e. non-canonical) index twice.
+///     - [ ] Fix certain cases where the binary search can recurse infinitely.
+///   - [ ] Invariant tests
+///     - [ ] After `n` `store` operations, `length` should be `n`.
+///     - [ ] After `n` `store` operations and `m` `deleteAt` operations, the array length should be `n - m`.
+///     - [ ] ...
 ///   - [ ] Gas profiling over a wide range of array sizes / deletions.
-/// - [ ] Add utility functions such as `pop`, `push`, etc.
+/// - [x] Add utility functions such as `pop`, `push`, etc.
 library SparseArrLib {
     ////////////////////////////////////////////////////////////////
     //                   Sparse Array Wranglin'                   //
@@ -88,10 +93,9 @@ library SparseArrLib {
         // Compute the storage slot of the deleted elements subarray.
         bytes32 sparseSlot = computeSparseSlot(slot);
 
-        // TODO: Handle deletions at the same index twice.
+        // TODO: Handle deletions at the same relative index twice.
         // TODO: Do not require linear progression of deletions (? - this would kinda suck to do)
         // TODO: Ensure edge deletions are handled correctly.
-
         assembly {
             // If the requested index is greater than or equal to the array length, revert.
             // Out of bounds deletions are not allowed
@@ -102,7 +106,7 @@ library SparseArrLib {
                 mstore(0x20, 0x20)
                 // Revert with `Panic(32)`
                 revert(0x1c, 0x24)
-            }            
+            }
 
             // Fetch the total offset from the deleted elements subarray
             // (the total offset is just the length)
@@ -125,7 +129,16 @@ library SparseArrLib {
         }
     }
 
-
+    /// @notice Push a value onto the end of the array.
+    /// @param slot The storage slot of the array to push to.
+    /// @param contents The value to push onto the array.
+    function push(bytes32 slot, bytes32 contents) internal {
+        uint256 length;
+        assembly {
+            length := sload(slot)
+        }
+        store(slot, length, contents);
+    }
 
     /// @notice Pop, removes the last item of the sparse array if array length is greater than 0
     /// @param slot The storage slot of the array to delete the element from.
