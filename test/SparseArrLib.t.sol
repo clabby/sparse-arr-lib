@@ -11,6 +11,8 @@ contract SparseArrLib_UnitTest is Test {
     /// @notice Test array.
     uint256[] public arr;
 
+    error DeletionUnderflow();
+
     ////////////////////////////////////////////////////////////////
     //                       `store` tests                        //
     ////////////////////////////////////////////////////////////////
@@ -239,6 +241,36 @@ contract SparseArrLib_UnitTest is Test {
     }
 
     ////////////////////////////////////////////////////////////////
+    //                    `safeDeleteAt` tests                    //
+    ////////////////////////////////////////////////////////////////
+
+    /// @notice Tests that `safeDeleteAt` reverts as expected when attempting to delete a canonical
+    /// index that is less than the largest deleted canonical index.
+    function test_safeDeleteAt_deletionUnderflow_reverts() public {
+        bytes32 slot = _getArrSlot();
+
+        // Store 5 elements in the sparse array
+        for (uint256 i; i < 5; ++i) {
+            bytes32 ins = bytes32(i);
+            SparseArrLib.store(slot, i, ins);
+            assertEq(SparseArrLib.get(slot, i), ins);
+        }
+
+        // Assert that the length is correct.
+        assertEq(arr.length, 5);
+
+        // Delete element at index 3
+        SparseArrLib.safeDeleteAt(slot, 3);
+
+        // Assert that the length is correct.
+        assertEq(arr.length, 4);
+
+        // Attempt to delete an element at a prior index.
+        vm.expectRevert(DeletionUnderflow.selector);
+        SparseArrLib.safeDeleteAt(slot, 2);
+    }
+
+    ////////////////////////////////////////////////////////////////
     //                        `push` tests                        //
     ////////////////////////////////////////////////////////////////
 
@@ -326,6 +358,12 @@ contract SparseArrLib_UnitTest is Test {
         vm.expectRevert(abi.encodeWithSelector(PANIC_SELECTOR, 0x20));
         SparseArrLib.get(slot, 4);
     }
+
+    ////////////////////////////////////////////////////////////////
+    //                       Gas Profiling                        //
+    ////////////////////////////////////////////////////////////////
+
+    // TODO
 
     ////////////////////////////////////////////////////////////////
     //                          Helpers                           //

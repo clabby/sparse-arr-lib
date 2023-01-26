@@ -3,6 +3,7 @@ pragma solidity ^0.8.17;
 
 /// @title SparseArrLib
 /// @author clabby <https://github.com/clabby>
+/// @author N0xMare <https://github.com/N0xMare>
 /// @notice A library for handling sparse storage arrays.
 /// ─────────────────────────────────────────────────────
 /// TODO:
@@ -20,6 +21,8 @@ library SparseArrLib {
     ////////////////////////////////////////////////////////////////
     //                   Sparse Array Wranglin'                   //
     ////////////////////////////////////////////////////////////////
+
+    error DeletionUnderflow();
 
     /// @notice Stores a value within a sparse array
     /// @param slot The storage slot of the array to write to.
@@ -86,6 +89,10 @@ library SparseArrLib {
 
     /// @notice Removes an element from the array at the given index and adds a new
     ///         sparse offset to the deleted elements subarray.
+    /// @dev WARNING! This function will not revert when deleting an element with a
+    ///      canonical index less than the largest deleted canonical index. If this
+    ///      is done, the data structure will break! Only use this function if you
+    ///      ensure that this will never happen elsewhere in your code.
     /// @param slot The storage slot of the array to delete the element from.
     /// @param index The index of the element to delete.
     function deleteAt(bytes32 slot, uint256 index) internal {
@@ -96,9 +103,11 @@ library SparseArrLib {
         // TODO: Do not require linear progression of deletions (? - this would kinda suck to do)
         // TODO: Ensure edge deletions are handled correctly.
         assembly {
+            let length := sload(slot)
+
             // If the requested index is greater than or equal to the array length, revert.
             // Out of bounds deletions are not allowed
-            if iszero(lt(index, sload(slot))) {
+            if iszero(lt(index, length)) {
                 // Store the `Panic(uint256)` selector in scratch space
                 mstore(0x00, 0x4e487b71)
                 // Store the out of bounds panic code in scratch space.
@@ -108,7 +117,7 @@ library SparseArrLib {
             }
 
             // Decrement the sparse length of the target array by 1.
-            sstore(slot, sub(sload(slot), 0x01))
+            sstore(slot, sub(length, 0x01))
 
             // Fetch the total offset from the deleted elements subarray
             // (the total offset is just the length)
@@ -118,13 +127,72 @@ library SparseArrLib {
             let newTotalOffset := add(totalOffset, 0x01)
             sstore(sparseSlot, newTotalOffset)
 
-            // Store the sparse slot in memory for hashing.
+            // Store the sparse slot in scratch space for hashing.
             mstore(0x00, sparseSlot)
 
             // Store the canonical index of the deleted element as well as the sparse
             // offset of elements proceeding it.
             // Canonical index = index + sparseOffset
             sstore(add(totalOffset, keccak256(0x00, 0x20)), add(index, newTotalOffset))
+        }
+    }
+
+    /// @notice Removes an element from the array at the given index and adds a new
+    ///         sparse offset to the deleted elements subarray.
+    /// @dev This function *will* revert if the canonical index of `index` is less than
+    ///      the largest deleted canonical index.
+    /// @param slot The storage slot of the array to delete the element from.
+    /// @param index The index of the element to delete.
+    function safeDeleteAt(bytes32 slot, uint256 index) internal {
+        // Compute the storage slot of the deleted elements subarray.
+        bytes32 sparseSlot = computeSparseSlot(slot);
+
+        // TODO: Handle deletions at the same relative index twice.
+        // TODO: Do not require linear progression of deletions (? - this would kinda suck to do)
+        // TODO: Ensure edge deletions are handled correctly.
+        assembly {
+            let length := sload(slot)
+
+            // If the requested index is greater than or equal to the array length, revert.
+            // Out of bounds deletions are not allowed
+            if iszero(lt(index, length)) {
+                // Store the `Panic(uint256)` selector in scratch space
+                mstore(0x00, 0x4e487b71)
+                // Store the out of bounds panic code in scratch space.
+                mstore(0x20, 0x20)
+                // Revert with `Panic(32)`
+                revert(0x1c, 0x24)
+            }
+
+            // Store the sparse slot in scratch space for hashing.
+            mstore(0x00, sparseSlot)
+
+            // Get the slot of the first element in the deleted elements subarray
+            let sparseStartSlot := keccak256(0x00, 0x20)
+
+            // Fetch the total offset from the deleted elements subarray
+            // (the total offset is just the length)
+            let totalOffset := sload(sparseSlot)
+
+            // Do not allow deletion of a canonical index that is less than the largest deleted canonical index.
+            if lt(add(index, totalOffset), sload(add(sparseStartSlot, sub(totalOffset, 0x01)))) {
+                // Store the `DeletionUnderflow()` selector in scratch space
+                mstore(0x00, 0xdb199ace)
+                // Revert with `DeletionUnderflow()`
+                revert(0x1c, 0x04)
+            }
+
+            // Decrement the sparse length of the target array by 1.
+            sstore(slot, sub(length, 0x01))
+
+            // Increment the total offset of the deleted elements subarray by 1.
+            let newTotalOffset := add(totalOffset, 0x01)
+            sstore(sparseSlot, newTotalOffset)
+
+            // Store the canonical index of the deleted element as well as the sparse
+            // offset of elements proceeding it.
+            // Canonical index = index + sparseOffset
+            sstore(add(totalOffset, sparseStartSlot), add(index, newTotalOffset))
         }
     }
 

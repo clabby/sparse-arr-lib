@@ -38,13 +38,19 @@ contract SparseArrActor is StdUtils {
     }
 
     /// @dev Delete a value from the sparse array at `index`
-    /// NOTE: We make no assertions about the order of deletions here. In practice,
-    ///       the order of deletions MUST be ascending due to the binary search.
-    /// TODO: Enforce ascending order of deletions.
     function deleteAt(uint256 index) public {
         index = bound(index, 0, arr.length - 1);
 
         SparseArrLib.deleteAt(_getArrSlot(), index);
+        numDeletes++;
+    }
+
+    /// @dev Delete a value from the sparse array at `index`, but only if it can
+    /// be safely deleted.
+    function safeDeleteAt(uint256 index) public {
+        index = bound(index, 0, arr.length - 1);
+
+        SparseArrLib.safeDeleteAt(_getArrSlot(), index);
         numDeletes++;
     }
 
