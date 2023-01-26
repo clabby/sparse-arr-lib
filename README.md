@@ -23,7 +23,8 @@ When the first element is deleted with `deleteAt`, a sub array of deleted elemen
 This array contains the canonical indicies of the deleted elements.
 
 If the subarray of deleted elements contains any values when a call to `store`, `push`, or `get` is made, a binary search will be performed over the array
-in order to find the nearest offset that is less than or equal to the supplied relative index.
+in order to find the nearest offset that is less than or equal to the supplied relative index. This offset will be added to the relative index in order
+to retrieve the canonical index.
 
 ### Current limitations:
 - Elements must be deleted linearly and in continuously ascending order. (i.e., one cannot delete index `5` and then `3`). This is due to the fact that the deleted elements subarray must be sorted for the binary search to work properly.
@@ -32,3 +33,7 @@ in order to find the nearest offset that is less than or equal to the supplied r
 ## Usage
 
 To view docs, run `forge doc --serve` and navigate to `http://localhost:3000/`.
+
+## Contributions
+
+Contributions are welcome!
