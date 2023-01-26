@@ -16,7 +16,7 @@ contract SparseArrLib_UnitTest is Test {
     ////////////////////////////////////////////////////////////////
 
     /// @notice Tests that appending to an array at the next expected slot works as expected.
-    function test_store_append_succeeds() public {
+    function test_store_append_works() public {
         bytes32 slot = _getArrSlot();
 
         SparseArrLib.store(slot, 0, b(1));
@@ -24,7 +24,7 @@ contract SparseArrLib_UnitTest is Test {
     }
 
     /// @notice Tests that overwriting a value at an existing, non-zero slot works as expected.
-    function test_store_overwrite_succeeds() public {
+    function test_store_overwrite_works() public {
         bytes32 slot = _getArrSlot();
 
         SparseArrLib.store(slot, 0, b(1));
@@ -34,7 +34,7 @@ contract SparseArrLib_UnitTest is Test {
     }
 
     /// @notice Tests that appending a value to the array after a deletion works as expected.
-    function test_store_appendAfterDeletion_succeeds() public {
+    function test_store_appendAfterDeletion_works() public {
         bytes32 slot = _getArrSlot();
 
         // Store 3 elements in the sparse array.
@@ -68,7 +68,7 @@ contract SparseArrLib_UnitTest is Test {
     }
 
     /// @notice Tests that overwriting a value in the array after a deletion works as expected.
-    function test_store_overwriteAfterDeletion_succeeds() public {
+    function test_store_overwriteAfterDeletion_works() public {
         bytes32 slot = _getArrSlot();
 
         // Store 3 elements in the sparse array.
