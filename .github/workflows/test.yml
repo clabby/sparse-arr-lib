@@ -32,3 +32,13 @@ jobs:
         run: |
           forge test -vvv
         id: test
+
+      - name: Lint
+        run: |
+          forge fmt
+          git diff --exit-code .
+
+      - name: Gas snapshot
+        run: |
+          forge snapshot
+          git diff --exit-code .gas-snapshot

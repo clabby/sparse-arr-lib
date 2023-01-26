@@ -124,7 +124,7 @@ library SparseArrLib {
             // Store the canonical index of the deleted element as well as the sparse
             // offset of elements proceeding it.
             // Canonical index = index + sparseOffset
-            sstore(add(totalOffset, keccak256(0x00, 0x20)), or(shl(0x80, add(index, newTotalOffset)), newTotalOffset))
+            sstore(add(totalOffset, keccak256(0x00, 0x20)), add(index, newTotalOffset))
         }
     }
 
@@ -174,13 +174,6 @@ library SparseArrLib {
 
     /// @notice Performs a binary search on all the deleted elements in the array to find
     /// the sparse offset of the given index.
-    /// @dev Packed layout of elements within the deleted elements subarray:
-    /// ┌──────────┬──────────────────────────────────────────────────────────────────────────┐
-    /// │  Bytes   │                                 Contents                                 │
-    /// ├──────────┼──────────────────────────────────────────────────────────────────────────┤
-    /// │ 16 bytes │ The canonical index of the deleted element                               │
-    /// │ 16 bytes │ The sparse offset starting at the canonical index of the deleted element │
-    /// └──────────┴──────────────────────────────────────────────────────────────────────────┘
     /// @param slot The storage slot of the array to read from.
     /// @param index The index within the array to read from.
     /// @return _offset The sparse offset of the given index.
@@ -205,7 +198,7 @@ library SparseArrLib {
 
                 // Only perform a search for the offset if the index >= (firstDeletionIndex - 1)
                 // Otherwise, the offset is always zero.
-                if iszero(lt(index, sub(shr(0x80, sload(sparseSlot)), 0x01))) {
+                if iszero(lt(index, sub(sload(sparseSlot), 0x01))) {
                     // Subtract one from the high bound to set it to the final *index* rather than
                     // the length of the deleted elements subarray.
                     high := sub(high, 0x01)
@@ -214,33 +207,31 @@ library SparseArrLib {
                     for {
                         // Calculate the midpoint of [low, high] with a floor div
                         let mid := shr(0x01, add(low, high))
-                        // Get the value of the midpoint in the deleted elements subarray.
-                        let midVal := sload(add(sparseSlot, mid))
-                        // Shift out the canonical index of the deleted element at the above midpoint
-                        let midIndex := shr(0x80, midVal)
-                        // Shift out the sparse offset of the deleted element at the above midpoint
-                        _offset := shr(0x80, shl(0x80, midVal))
+                        // Get the canonical index of the midpoint in the deleted elements subarray.
+                        let midIndex := sload(add(sparseSlot, mid))
+                        // Get the sparse offset of the midpoint in the deleted elements subarray.
+                        _offset := add(mid, 0x01)
                     } iszero(gt(low, high)) {
                         // Calculate the midpoint of [low, high] with a floor div
                         mid := shr(0x01, add(low, high))
-                        // Get the value of the midpoint in the deleted elements subarray.
-                        midVal := sload(add(sparseSlot, mid))
-                        // Shift out the canonical index of the deleted element at the above midpoint
-                        midIndex := shr(0x80, midVal)
-                        // Shift out the sparse offset of the deleted element at the above midpoint
-                        _offset := shr(0x80, shl(0x80, midVal))
+                        // Get the canonical index of the midpoint in the deleted elements subarray.
+                        midIndex := sload(add(sparseSlot, mid))
+                        // Get the sparse offset of the midpoint in the deleted elements subarray.
+                        _offset := add(mid, 0x01)
                     } {
+                        // Calculate the canonical index
                         let canonicalIndex := add(index, _offset)
+
+                        // If the canonical index is less than the index at the midpoint, set the high bound to mid - 1
                         if lt(canonicalIndex, midIndex) {
                             high := sub(mid, 0x01)
                             continue
                         }
-
+                        // If the canonical index is greater than the index at the midpoint, set the low bound to mid + 1
                         if gt(canonicalIndex, midIndex) {
                             low := add(mid, 0x01)
                             continue
                         }
-
                         // If the indexes are equal, we've found our offset!
                         break
                     }
